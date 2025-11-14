@@ -33,3 +33,5 @@ mdot_fuel:float         =       1.66            # kg/s (calculated)
 # Premixers
 n_premixers:int         =       6.0             # Total number of premixers
 initial_vel:float       =       180             # m/s
+
+a = 1
