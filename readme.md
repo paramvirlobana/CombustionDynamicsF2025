@@ -17,3 +17,25 @@ To be added
 ```bash
 pip install -r requirements.txt
 ```
+
+
+## Git commands
+
+To see the status, use
+```bash
+git status
+```
+
+To pull the latest updates
+```bash
+git pull
+```
+
+To upload changes to the cloud
+
+```bash
+
+git add .
+git commit -m "<change summary>"
+git push origin main
+```
