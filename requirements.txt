@@ -1,2 +1,5 @@
 molmass
 cantera
+numpy
+pandas
+plotly

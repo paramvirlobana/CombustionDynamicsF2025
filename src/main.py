@@ -3,7 +3,6 @@
 #                        PROJECT
 # Authors:
 #   --  Paramvir Lobana      --
-#   --  Fouad    Al Laham    --
 #   --  Lilou    Mandray     --
 #===========================================================
 
@@ -14,53 +13,58 @@ from time import time
 import argparse
 import matplotlib.pyplot as plt
 
-# Input variables
-# Variable                      Value           Units
-
-# Operating conditions
-P_30:float              =       24*ct.one_atm   # Pa
-T_30:float              =       750             # K
-power_out:int           =       34              # MW
-eta_th:float            =       0.41            # %
-
-# Pressure losses
-P_loss_max:float        =       0.06            # %
-P_loss_inlet:float      =       0.03            # %
-P_loss_combustor        =       0.01            # %
-
-# Mass flows
-combustion_air:float    =       0.75            # %
-cooling_air:float       =       0.11            # % 
+# User imports
+from inputs import *
+import modules.thermodynamics as thermo
 
 # Init gases
 gas                    =       ct.Solution('gri30.yaml')
 
+# Design variables:
+EQR = 1.0
+
 def main(
     args
     ):
+
     startTime = time()
 
-    # We define the fuel and oxidizer temperature and pressure.
-    gas.TP = T_30, P_30
+    # 0. Init gas state
+    gas_premixer = ct.Solution(os.path.join(MODELS, 'aramco3.yaml'))
+    gas_premixer.TP = T_30, P_30
+    gas_premixer.set_equivalence_ratio(phi=EQR, fuel="CH4:1", oxidizer="O2:0.21,N2:0.79")
+    gas_premixer_density = gas_premixer.density_mass
 
-    time_array, temp_array, tau_ign = subroutine_velocity_analysis(gas, phi=1.0)
+    # 1. Obtain initial parameters: mass flow fuel, mass flow air, etc
+    gas_combustion = ct.Solution(os.path.join(MODELS, 'aramco3.yaml'))
+    gas_combustion.TP = T_30, P_30
+    gas_combustion.set_equivalence_ratio(phi=EQR, fuel="CH4:1", oxidizer="O2:0.21,N2:0.79")
+    t_ad = thermo.calc_AdiabaticTemperature(gas_combustion)
+    mdot_air = func_mdot_air(EQR)
 
-    print(f"\n--- Results ---")
-    print(f"Initial Temperature: {T_30} K")
-    print(f"Initial Pressure: {P_30 / ct.one_atm:.2f} bar")
-    print(f"Mixture: Stoichiometric Methane-Air")
-    print(f"Autoignition Delay Time (tau_ign): {tau_ign * 1000:.4f} ms")
+    # Add a check for t_ad. If between range, mark are good.
+    if t_ad < 1750 or t_ad > 1850:
+        print(f"❌ Adiabatic flame temperature {t_ad:.2f}K is out of the desired range (1750-1850K). Please adjust EQR.\n")
+    else:
+        print(f"✅ Adiabatic flame temperature is {t_ad:.2f}K, within the desired range.\n")
 
-    plt.figure(figsize=(10, 6))
-    plt.plot(time_array * 1000, temp_array, lw=2)
-    plt.xlabel('Time (ms)')
-    plt.ylabel('Temperature (K)')
-    plt.title(f'Autoignition at {T_30} K, {P_30 / ct.one_atm:.0f} bar')
-    plt.grid(True, which='both', linestyle='--', alpha=0.7)
 
-    plt.legend()
-    plt.show()
+    # Define the mass flow rates again based on the number of premixers. Default set to 12, update in inputs.py file
+    mdotAir = mdot_air/n_premixers
+    mdotFuel = mdot_fuel/n_premixers
+    mdotTotal = mdotAir + mdotFuel
 
+
+    print("Mass flow stats (per premixer):")
+    print(f"- Mass flow fuel:    {mdotFuel:10.3f} kg/s")
+    print(f"- Mass flow air:     {mdotAir:10.3f} kg/s")
+    print(f"- Total mass flow:   {mdotTotal:10.3f} kg/s")
+
+    D = np.sqrt((mdotTotal * 4) / (gas_premixer_density * np.pi * initial_vel))
+    print(D)
+
+
+    T, t = thermo.computeIgnitionDelay(gas_premixer, T30=750, save=True)
 
     endTime = time()
     print("") 
@@ -69,43 +73,12 @@ def main(
     print(f"Program took {(endTime - startTime):10.03f}s to execute.")
 
 
-def subroutine_velocity_analysis(
-    gas:ct.Solution, phi:float
-    ) -> tuple:
+def func_mdot_air(EQR:float):
 
-    """
-    Analysis on the premixer to ensure autoignition does not occur.
-    Need to prove this using 0D analysis, using phi = 1.
-    Code similar to project 1.
-    """
-    # init storage arrays
-    time_store:list = []
-    temp_store:list = []
+    AFR = AFR_STOIC / EQR
+    mdot_air = AFR * mdot_fuel
 
-    gas.set_equivalence_ratio(phi=phi, fuel="CH4:1", oxidizer="O2:0.21,N2:0.79")
-
-    # Create reactor
-    r = ct.IdealGasReactor(gas)
-    sim = ct.ReactorNet([r])
-
-    t_max:float = 0.1   # max simulation time
-    t_now:float = 0.0   # current time
-
-    while t_now < t_max:
-        time_store.append(t_now)
-        temp_store.append(r.T)
-        
-        # Integrate forward in time
-        t_now = sim.step()
-
-    time_array = np.array(time_store)
-    temp_array = np.array(temp_store)
-
-    dTdt = np.gradient(temp_array, time_array) # temp gradient
-    ign_index = np.argmax(dTdt)                # index max gradient
-    tau_ign = time_array[ign_index]
-
-    return time_array, temp_array, tau_ign
+    return mdot_air
 
 
 

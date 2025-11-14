@@ -1,67 +1,72 @@
 import cantera as ct
 from molmass import Formula
+import numpy as np
 
-def calc_AdiabeticTemperature(phi, T_init:float=298.15, P_init:float=101325.0) -> float:
+def calc_AdiabaticTemperature(gas:ct.Solution, phi:float=None, **state) -> float:
+    """
+    
+    """
 
-    # Define the cantera reaction mechanim
-    gas = ct.Solution('gri30.yaml')
+    gas_temp = gas
 
-    # Fuel species changed to hydrogen
-    fuel_species = 'CH4'
+    if phi is not None:
+        fuel, oxidizer, T_init, P_init = state['T_init'], state['P_init']
 
-    # Set gas state for given phi
-    gas.set_equivalence_ratio(phi, fuel_species, 'O2:0.21, N2:0.79')
-    gas.TP = T_init, P_init
+        # Set gas state for given phi
+        gas_temp.set_equivalence_ratio(phi, fuel=fuel, oxidizer=oxidizer)
+        gas_temp.TP = T_init, P_init
 
     # Equilibrate the mixture adiabatically at constant pressure
-    gas.equilibrate('HP', solver='gibbs', max_steps=10000)
-
-    tad = gas.T
+    gas_temp.equilibrate('HP', solver='gibbs', max_steps=10000)
+    tad = gas_temp.T
 
     return tad
 
 
-def calc_AirProperties():
-    # Given
-    T_FUEL: float = 500  # [K]
-    P_FUEL: float = 1.5e+6 # [Pa] = 15 bar = 1.5 MPa
+def computeIgnitionDelay(gas:ct.Solution, T30:float, save:bool=False) -> tuple:
 
-    T_AIR: float = 800
-    P_AIR: float = 1.2e+6    # [Pa] = 12 bar = 1.2 MPa
+    """
+    Function to compute and return the ignition delay.   
+    """
+    #oxidizer = {'O2':1.0, 'N2':3.76} # Moles
+    #temp_gas = gas # Defined a temporary variable so the calculations do not update the original 'gas' object.
+    #temp_gas.set_equivalence_ratio(phi=EQR, fuel=fuel, oxidizer=oxidizer, basis='mole')
+    #temp_gas.TP = T30, P30
 
-
-    # Constants
-    R_UNIV = 8.314462618  # J/(mol·K)
-
-    # Molecular weights (kg/mol)
-    MW_O2       = Formula('O2').mass * 1e-3
-    MW_N2       = Formula('N2').mass * 1e-3
-    MW_NH3      = Formula('NH3').mass * 1e-3
-
-    MW_AIR  = 0.21 * MW_O2 * 1e-3 + 0.79 * MW_N2 * 1e-3
-    MW_FUEL = MW_NH3 * 1e-3
-
-    # Specific gas constants (J/kg.K)
-    R_AIR  = R_UNIV / MW_AIR
-    R_FUEL = R_UNIV / MW_FUEL
+    # init the reactor
+    r = ct.IdealGasConstPressureMoleReactor(gas, name='R1')
+    sim = ct.ReactorNet([r])
+    sim.derivative_settings = {"skip-third-bodies":True, "skip-falloff":True}
+    sim.preconditioner = ct.AdaptivePreconditioner() # Manage the numerical convergence / iteration by "conditioning" the matrix.
 
 
-    # Densities [kg/m^3]
-    DENSITY_AIR  = P_AIR  / (R_AIR  * T_AIR)
-    DENSITY_FUEL = P_FUEL / (R_FUEL * T_FUEL)
+    # Define the solution array # Append time:
+    states = ct.SolutionArray(gas, extra='time')
+    
+    T_old = 0
+    T_new = 0
+    t = 0.0
+    maxtime = 1e+6
+    counter = 0
 
-    print(f"{'Quantity':<20} {'Value':>15} {'Unit':<10}")
-    print("-" * 50)
-    print(f"{'Air Density':<20} {DENSITY_AIR:>15.6f} {'kg/m3':<10}")
-    print(f"{'Air Temperature':<20} {T_AIR:>15.1f} {'K':<10}")
-    print(f"{'Air Pressure':<20} {P_AIR:>15.1f} {'Pa':<10}")
-    print("-" * 50)
-    print(f"{'Fuel Density':<20} {DENSITY_FUEL:>15.6f} {'kg/m3':<10}")
-    print(f"{'Fuel Temperature':<20} {T_FUEL:>15.1f} {'K':<10}")
-    print(f"{'Fuel Pressure':<20} {P_FUEL:>15.1f} {'Pa':<10}")
-    print("-" * 50)
+    while t < maxtime:
+        T_old = r.T
+        t = sim.step()
+        T_new = r.T
 
-    return DENSITY_AIR, DENSITY_FUEL, MW_AIR, MW_FUEL
+        if(counter%1 == 0):
+            states.append(r.thermo.state, time=t)
+
+            if (np.absolute(T_new - T_old) < 0.001 and T_old > (T30 + 800)):
+                print(f"T30 = {T30:4.2f} K, Tf = {r.T:.2f} K and Ignition Delay = {t:.4f} seconds")
+                break
+
+            counter += 1      
+
+    if save:
+        states.to_pandas().to_csv("ignition_delay_output.csv")
+
+    return r.T, t
 
 
 def calc_AirFuelRatio(MW_AIR:float, MW_FUEL:float, stoic:bool=False) -> float:
@@ -85,4 +90,4 @@ def calc_EquivalenceRatio(AFR_STOIC:float, AFR:float) -> float:
     return EQR
 
 if __name__ == '__main__':
-    calc_AirProperties()
+    pass
