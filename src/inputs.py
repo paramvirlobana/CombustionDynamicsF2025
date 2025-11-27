@@ -28,8 +28,8 @@ cooling_air:float       =       0.11            # %
 
 # Fuel
 AFR_STOIC:float         =       17.11           # For methane - air combustion
-mdot_fuel:float         =       1.66            # kg/s (calculated)
+mdot_fuel_total:float   =       1.66            # kg/s (calculated)
 
 # Premixers
-n_premixers:int         =       6.0             # Total number of premixers
+n_premixers:int         =       18.0             # Total number of premixers
 initial_vel:float       =       180             # m/s

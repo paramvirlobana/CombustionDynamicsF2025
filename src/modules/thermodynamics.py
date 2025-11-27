@@ -3,10 +3,6 @@ from molmass import Formula
 import numpy as np
 
 def calc_AdiabaticTemperature(gas:ct.Solution, phi:float=None, **state) -> float:
-    """
-    
-    """
-
     gas_temp = gas
 
     if phi is not None:
@@ -85,7 +81,6 @@ def calc_EquivalenceRatio(AFR_STOIC:float, AFR:float) -> float:
     """
     Calculates the equivalence ratio.
     """
-
     EQR = AFR_STOIC / AFR
     return EQR
 
