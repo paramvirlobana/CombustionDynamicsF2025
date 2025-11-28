@@ -36,6 +36,15 @@ def BorghiPlot(df: pd.DataFrame, xScatter: str, yScatter: str) -> None:
     fig.add_annotation(x=np.log10(400), y=np.log10(10), text="Ka = 1",
         showarrow=False, font=dict(size=14))
     
+    # Now we make plot for Ka = 10
+    x_3a = np.linspace(0.317, 1000, 1000)
+    y_3a = (10 * (x_3a)**(1/2))**(2/3)
+    fig.add_trace(go.Scatter(x=x_3a, y=y_3a, mode="lines",
+        line=dict(color="black", width=1, dash="dash"),
+        name="Ka = 10"))
+    fig.add_annotation(x=np.log10(2), y=np.log10(36), text="Ka = 100",
+        showarrow=False, font=dict(size=14))
+
 
     # Now we make plot for Ka = 100
     x_3b = np.linspace(0.1, 1000, 1000)
@@ -58,7 +67,9 @@ def BorghiPlot(df: pd.DataFrame, xScatter: str, yScatter: str) -> None:
     
 
     # Scatter data
-    scatter_fig = px.scatter(df, x=xScatter, y=yScatter, color="PHI")
+    scatter_fig = px.scatter(
+        df, x=xScatter, y=yScatter, color="U0",)
+        #size='U0')
     for trace in scatter_fig.data:
         fig.add_trace(trace)
 

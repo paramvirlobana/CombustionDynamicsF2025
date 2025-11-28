@@ -1,7 +1,6 @@
 import os
 import cantera as ct
 
-from modules.utilities import *
 
 # Directories
 DIR     = os.path.dirname(os.path.realpath(__file__))
@@ -39,17 +38,5 @@ initial_vel:float       =       180              # m/s
 # Turbulence grid
 m_grid_ig:float         =       0.003            # m
 
-# Peters Model
-a_peters:float          =       0.547               
-
-# Zimont Model
-A_zimont:float          =       0.52
-Pr_zimont:float         =       0.71            # Assumption
-
-
-# Curves
-x1, y1 = reader(os.path.join(DATA, "fig5-33.csv"))
-f1 = func_interpolate(x1, y1)
-
-x2, y2 = reader(os.path.join(DATA, "fig5-35.csv"))
-f2 = func_interpolate(x2, y2)
+# Peters model
+a_Peters:float          =       0.547

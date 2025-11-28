@@ -42,14 +42,14 @@ def main(
     # What can we define as the input variable?
 
     # NOTE: Design Variables
-    U0_range    = np.arange(40, 241, 10)            # Bulk flow velocity
+    U0_range    = np.arange(60, 241, 10)            # Bulk flow velocity
     PHI_range   = np.arange(0.45, 0.501, 0.01)      # Equivalence ratio
     xM_range    = np.arange(20, 26.01, 0.1)           # Non-dimensional location for turbulence intensity
 
-    U0_range    = np.arange(40, 241, 10)            # Bulk flow velocity
+    U0_range    = np.arange(60, 241, 10)            # Bulk flow velocity
     PHI_range   = np.arange(0.45, 0.48, 0.01)      # Equivalence ratio
     xM_range    = np.arange(20, 26.01, 2.0)           # Non-dimensional location for turbulence intensity
-    xM_range = np.array([24])
+    #PHI_range = np.array([0.47])
 
 
     design_variables:tuple = (U0_range, PHI_range, xM_range) # order matters.
@@ -66,14 +66,16 @@ def main(
     delta_f     = np.zeros(design_points)
     lt_delta_f  = np.zeros(design_points)
     u_prime_S_L = np.zeros(design_points)
-    
+    L_min       = np.zeros(design_points)
+    L           = np.zeros(design_points)
+    ST_SL_P     = np.zeros(design_points)
+    ST_SL_Z     = np.zeros(design_points)
+       
     iter:int = 0
 
     # design iterator
     for (U0, PHI, xM), _ in product(*design_variables):
 
-        #if (iter+1)%10 == 0: # we print every 10th iteration.
-        print(f"Iteration {iter+1:>4}/{design_points:<4} | U0 = {U0:>7.2f} m/s | PHI = {PHI:>6.3f} | xM = {xM:>7.4f}")
 
         # To store the iteration value.
         U0_arr[iter]      = U0
@@ -83,7 +85,6 @@ def main(
         gas_A = ct.Solution(mech)
         gas_A.TP = T_30, P_30
         gas_A.set_equivalence_ratio(phi=PHI, fuel=fuel, oxidizer=oxidizer)
-        gas_density = gas_A.density_mass
 
         # Calculate t_ad for each design.
         gas_A.equilibrate('HP', solver='gibbs', max_steps=10000)
@@ -94,7 +95,7 @@ def main(
         m_dot_air[iter] = (AFR_STOIC * mdot_fuel_total) / (PHI * n_premixers)
 
         # Using conservation of mass, we can calculate the required diameter.
-        D[iter] = np.sqrt((m_dot_air[iter] * 4) / (gas_density * np.pi * U0))
+        D[iter] = np.sqrt((m_dot_air[iter] * 4) / (gas_A.density_mass * np.pi * U0))
 
         # TODO
         # Need to add base code for objective 2 and objective 3.
@@ -104,6 +105,22 @@ def main(
         # .
         # .
         # TODO
+            
+        # Turbulence Grid and L_min
+        # We calculate the minimum length required where turbulent intensity is above 3%.
+        grid_range = np.linspace(20, 30, 1000)
+        y_range = f1(grid_range)
+
+        # Compute where turbulence drops below threshold.
+        idx = np.where(y_range < 0.03**2)[0][0]
+        cutoff_xM = grid_range[idx]
+
+        L_min[iter] = np.round(cutoff_xM * m_grid_ig, 6)
+        L[iter]     = xM * m_grid_ig
+
+
+        # Calculate the mixing timescale (This is objective 3).
+        eta = (D[iter] / 2) / L[iter]
 
         # Compute the laminar flame speed.
         # We initialize a new gas object because the previous object is
@@ -126,9 +143,34 @@ def main(
 
 
         # Plot results on the Borghi diagram.
-        
         lt_delta_f[iter]    = (0.1 * D[iter]) / delta_f[iter]
-        u_prime_S_L[iter]   = (0.035 * U0) / S_L[iter]
+        u_prime_S_L[iter]   = (0.030 * U0) / S_L[iter]
+
+
+        # NOTE Objective 5a
+        # Using corelations to calculate the turbulent flame speed.
+        # Burner Rim Stabilized Flames
+
+        # Calculating the turbulent Re
+        # TODO to be verified because using a dummy value for intensity at the moment.
+        Re_T = (0.030 * U0 * 0.1 * D[iter]) / (S_L[iter] * delta_f[iter])
+
+        # NOTE Peters Model
+
+        A = (Re_T / (u_prime_S_L[iter])) + 1
+        E1 = 1 * (a_peters/2) * A
+        ST_SL_P[iter] = -1 * E1 + np.sqrt((E1)**2 + (a_peters * A * u_prime_S_L[iter]) + a_peters + 1)
+
+        # NOTE Zimont Model
+        ST_SL_Z[iter] = A_zimont * (Pr_zimont)**(1/4) * (Re_T)**(1/4) * np.sqrt(u_prime_S_L[iter])
+
+        if (iter+1)%4 == 0: # we print every 10th iteration.
+            print(f"Iteration {iter+1:>4}/{design_points:<4} | U0 = {U0:>7.2f} m/s | PHI = {PHI:>6.3f} | xM = {xM:>7.4f}")
+            print(f"Iteration {iter+1:>4}/{design_points:<4}| ST/SL P = {ST_SL_P[iter]:>7.4f} | ST/SL Z = {ST_SL_Z[iter]:>7.4f}")
+            print("------------------")
+        #if (iter+1)%10 == 0: # we print every 10th iteration.
+            #print(f"Iteration {iter+1:>4}/{design_points:<4} | U0 = {U0:>7.2f} m/s | PHI = {PHI:>6.3f} | xM = {xM:>7.4f}| ST/SL (SL)= {ST_SL[iter]:>7.4f} ({S_L[iter]:.4f})")
+
 
         # loop iterator
         iter += 1
@@ -140,10 +182,14 @@ def main(
         'T_ad': t_ad,
         'm_dot_air': m_dot_air,
         'D': D,
+        'L_min': L_min,
+        'L_actual': L,
         'S_L': S_L,
         'delta_f': delta_f,
-        'borghi_x': lt_delta_f,
-        'borghi_y': u_prime_S_L
+        'lt_Lf': lt_delta_f,
+        'ui_SL': u_prime_S_L,
+        'ST_SL_Peters': ST_SL_P,
+        'ST_SL_Zimont': ST_SL_Z
     })
 
 
