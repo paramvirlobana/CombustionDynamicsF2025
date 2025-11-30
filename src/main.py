@@ -2,8 +2,8 @@
 # Program written for  Combustion Dynamics - Fall 2025
 #                        PROJECT
 # Authors:
-#   --   PL   --
-#   --      --
+#   --   Paramvir Lobana   --
+#   --   Fouad Al Laham    --
 #===========================================================
 
 import sys
@@ -49,7 +49,7 @@ def main(
     U0_range    = np.arange(60, 241, 10)            # Bulk flow velocity
     PHI_range   = np.arange(0.45, 0.48, 0.01)      # Equivalence ratio
     xM_range    = np.arange(20, 26.01, 2.0)           # Non-dimensional location for turbulence intensity
-    #PHI_range = np.array([0.47])
+    PHI_range = np.array([0.47])
 
 
     design_variables:tuple = (U0_range, PHI_range, xM_range) # order matters.
@@ -68,8 +68,19 @@ def main(
     u_prime_S_L = np.zeros(design_points)
     L_min       = np.zeros(design_points)
     L           = np.zeros(design_points)
+
+    # Pressure Loss
+    x_injector      = np.zeros(design_points)
+    df_DeltaP_grid  = np.zeros(design_points)
+    df_DeltaP_fric  = np.zeros(design_points)
+    df_DeltaP_total = np.zeros(design_points)
+    df_f_D          = np.zeros(design_points)
+    df_Re           = np.zeros(design_points)
+
+    # Turbulent Flame Speed Models
     ST_SL_P     = np.zeros(design_points)
     ST_SL_Z     = np.zeros(design_points)
+
        
     iter:int = 0
 
@@ -97,40 +108,63 @@ def main(
         # Using conservation of mass, we can calculate the required diameter.
         D[iter] = np.sqrt((m_dot_air[iter] * 4) / (gas_A.density_mass * np.pi * U0))
 
-        # TODO
-        # Need to add base code for objective 2 and objective 3.
-        # .
-        # .
-        # .
-        # .
-        # .
-        # TODO
-            
-        # Turbulence Grid and L_min
-        # We calculate the minimum length required where turbulent intensity is above 3%.
-        grid_range = np.linspace(20, 30, 1000)
-        y_range = f1(grid_range)
-
-        # Compute where turbulence drops below threshold.
-        idx = np.where(y_range < 0.03**2)[0][0]
-        cutoff_xM = grid_range[idx]
-
-        L_min[iter] = np.round(cutoff_xM * m_grid_ig, 6)
         L[iter]     = xM * m_grid_ig
 
+        # TODO
+        # Injector location is where variance is highest.
+        x_injector[iter] = D[iter] / (2 * 0.85) # assuming 85% mixing efficiency before injector.
 
         # Calculate the mixing timescale (This is objective 3).
         eta = (D[iter] / 2) / L[iter]
+        #if eta > 0.028:
+        #    iter += 1
+        #    continue
+        
+        # NOTE Pressure Loss Calculations
+        # New gas object for pressure loss calculations.
+        gas_B = ct.Solution(mech)
+        gas_B.TP = T_30, P_30
+        gas_B.set_equivalence_ratio(phi=PHI, fuel=fuel, oxidizer=oxidizer)
+        rho = gas_B.density_mass
+        mu  = gas_B.viscosity
+
+        Re = (rho * U0 * D[iter]) / mu
+        
+        # Darcy friction factor (Blasius)
+        # valid for 3000 < Re < 100,000 but used widely up to 10^5–10^6 for estimates
+        f_D = 0.3164 * Re ** (-0.25)
+
+        # Grid solidity (NOTE ASSUMPTION: sigma = 0.40)
+        sigma = 0.40
+
+        # Grid drag coefficient (NOTE ASSUMPTION: C_D = 1.5)
+        C_D = 1.5
+
+        # Grid pressure drop
+        DeltaP_grid = 0.5 * rho * U0**2 * C_D * sigma
+
+        # Frictional pressure drop along premixer length L
+        DeltaP_fric = f_D * (L[iter] / D[iter]) * 0.5 * rho * U0**2
+
+        # Total pressure drop through injector/premixer
+        DeltaP_total = DeltaP_grid + DeltaP_fric
+
+        df_DeltaP_grid     [iter] = DeltaP_grid
+        df_DeltaP_fric     [iter] = DeltaP_fric
+        df_DeltaP_total    [iter] = DeltaP_total
+        df_f_D             [iter] = f_D
+        df_Re              [iter] = Re
+
 
         # Compute the laminar flame speed.
         # We initialize a new gas object because the previous object is
         # already solved and in equilibrium state.
 
-        gas_B = ct.Solution(mech)
-        gas_B.TP = T_30, P_30
-        gas_B.set_equivalence_ratio(phi=PHI, fuel=fuel, oxidizer=oxidizer)
+        gas_C = ct.Solution(mech)
+        gas_C.TP = T_30, P_30
+        gas_C.set_equivalence_ratio(phi=PHI, fuel=fuel, oxidizer=oxidizer)
 
-        flame = ct.FreeFlame(gas_B, width=D[iter])
+        flame = ct.FreeFlame(gas_C, width=D[iter])
         flame.set_refine_criteria(ratio=3, slope=0.1, curve=0.1)
         flame.solve(loglevel=0, auto=True)
         S_L[iter] = flame.velocity[0]
@@ -168,10 +202,7 @@ def main(
             print(f"Iteration {iter+1:>4}/{design_points:<4} | U0 = {U0:>7.2f} m/s | PHI = {PHI:>6.3f} | xM = {xM:>7.4f}")
             print(f"Iteration {iter+1:>4}/{design_points:<4}| ST/SL P = {ST_SL_P[iter]:>7.4f} | ST/SL Z = {ST_SL_Z[iter]:>7.4f}")
             print("------------------")
-        #if (iter+1)%10 == 0: # we print every 10th iteration.
-            #print(f"Iteration {iter+1:>4}/{design_points:<4} | U0 = {U0:>7.2f} m/s | PHI = {PHI:>6.3f} | xM = {xM:>7.4f}| ST/SL (SL)= {ST_SL[iter]:>7.4f} ({S_L[iter]:.4f})")
-
-
+            
         # loop iterator
         iter += 1
 
@@ -182,14 +213,18 @@ def main(
         'T_ad': t_ad,
         'm_dot_air': m_dot_air,
         'D': D,
-        'L_min': L_min,
         'L_actual': L,
         'S_L': S_L,
         'delta_f': delta_f,
         'lt_Lf': lt_delta_f,
         'ui_SL': u_prime_S_L,
         'ST_SL_Peters': ST_SL_P,
-        'ST_SL_Zimont': ST_SL_Z
+        'ST_SL_Zimont': ST_SL_Z,
+        'Re': df_Re,
+        'f_D': df_f_D,
+        'DP_grid': df_DeltaP_grid,
+        'DP_fric': df_DeltaP_fric,
+        'DP_total': df_DeltaP_total,
     })
 
 
@@ -197,7 +232,8 @@ def main(
     df.to_csv('test_data.csv', index=False)
     print_stats(startTime, time())
 
-
+def pressure_loss():
+    pass
 
 if __name__ == "__main__":
 
