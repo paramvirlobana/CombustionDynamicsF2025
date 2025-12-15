@@ -53,6 +53,15 @@ a_peters:float          =       0.547
 A_zimont:float          =       0.52
 Pr_zimont:float         =       0.71            # Assumption
 
+# Muppala Model
+Le_CH4:float            =       0.95            # Lewis Number of Methane
+C_Muppala:float         =       0.46
+
+
+# Bluff Body Parameters
+C_D_BB:float            =       0.80            # Drag Coefficient (Source: Embry Ribble Aeronautical University)
+theta:float             =       np.pi/3         # Angle chosen for the bluff body
+
 
 # Curves
 x1, y1 = reader(os.path.join(DATA, "fig5-33.csv"))

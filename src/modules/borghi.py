@@ -68,7 +68,7 @@ def BorghiPlot(df: pd.DataFrame, xScatter: str, yScatter: str) -> None:
 
     # Scatter data
     scatter_fig = px.scatter(
-        df, x=xScatter, y=yScatter, color="U0",)
+        df, x=xScatter, y=yScatter, color="U0",symbol="Stabilization")
         #size='U0')
     for trace in scatter_fig.data:
         fig.add_trace(trace)
